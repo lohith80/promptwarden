@@ -1,0 +1,42 @@
+// PromptWarden starter queries for Microsoft Sentinel.
+// Assumes JSONL events ingested to a custom table PromptWarden_CL with the
+// event JSON in RawData (adjust names to your DCR / custom table schema).
+
+// 1. Blocked LLM traffic by rule and OWASP category (24h)
+PromptWarden_CL
+| where TimeGenerated > ago(24h)
+| extend e = parse_json(RawData)
+| where tostring(e.status) == "block"
+| mv-expand finding = e.finding_info
+| summarize count() by rule_id = tostring(finding.rule_id),
+    owasp = tostring(finding.owasp_llm_top10)
+| order by count_ desc
+
+// 2. Prompt-injection burst detection (candidate analytics rule, 5m bins)
+PromptWarden_CL
+| where TimeGenerated > ago(1h)
+| extend e = parse_json(RawData)
+| where tostring(e.status) == "block"
+| mv-expand finding = e.finding_info
+| where tostring(finding.owasp_llm_top10) == "LLM01"
+| summarize attempts = count() by bin(TimeGenerated, 5m),
+    app = tostring(e.metadata.app_id)
+| where attempts > 10
+
+// 3. Canary token leak — deterministic system prompt leakage (incident-grade)
+PromptWarden_CL
+| extend e = parse_json(RawData)
+| mv-expand finding = e.finding_info
+| where tostring(finding.rule_id) == "PW-C001"
+| project TimeGenerated, app = tostring(e.metadata.app_id),
+    request_id = tostring(e.metadata.uid)
+
+// 4. MITRE ATLAS technique frequency (7d) — maps LLM abuse to ATLAS
+PromptWarden_CL
+| where TimeGenerated > ago(7d)
+| extend e = parse_json(RawData)
+| mv-expand finding = e.finding_info
+| where isnotempty(finding.mitre_atlas)
+| summarize count() by technique = tostring(finding.mitre_atlas),
+    action = tostring(e.status)
+| order by count_ desc

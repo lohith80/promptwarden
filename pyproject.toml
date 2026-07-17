@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "promptwarden"
+version = "0.1.0"
+description = "Security gateway for LLM APIs: prompt-injection and data-egress detection with SOC-grade telemetry (OCSF/CEF events, Splunk/Sentinel content), mapped to OWASP LLM Top 10 and MITRE ATLAS."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Indu Lohith Narisetty", email = "indulohithnarisetty@gmail.com" }]
+keywords = ["llm-security", "prompt-injection", "ai-security", "owasp-llm-top-10", "mitre-atlas", "siem", "detection-engineering"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+]
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "httpx>=0.27",
+  "pydantic>=2.6",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/lohith80/promptwarden"
+Issues = "https://github.com/lohith80/promptwarden/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101"]  # assert is fine in tests; src avoids asserts anyway
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "E501"]

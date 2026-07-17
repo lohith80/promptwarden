@@ -1,0 +1,26 @@
+# PromptWarden policy. Copy to config/policy.yaml and adjust.
+# Severity scale is 1-10; detections at or above block_at are blocked,
+# at or above flag_at are logged as flags but allowed through.
+
+gateway:
+  block_at: 8
+  flag_at: 5
+  max_body_bytes: 1000000
+
+detectors:
+  heuristics:
+    enabled: true
+  secrets:
+    enabled: true
+  canary:
+    enabled: true
+    # Generate with: python -c "from promptwarden.detectors.canary import generate_canary; print(generate_canary())"
+    # then embed the token in your app's system prompt and list it here.
+    tokens: []
+  denylist:
+    enabled: true
+    patterns:
+      - id: PW-D001
+        pattern: "(?i)internal use only"
+        severity: 6
+        description: "Internal classification marker in model traffic"

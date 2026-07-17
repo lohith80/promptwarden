@@ -1,0 +1,17 @@
+services:
+  promptwarden:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PW_UPSTREAM_BASE_URL: ${PW_UPSTREAM_BASE_URL:-https://api.openai.com}
+      PW_EVENT_LOG: /events/promptwarden.jsonl
+      # Optional Splunk HEC forwarding:
+      # PW_HEC_URL: https://splunk.example.com:8088
+      # PW_HEC_TOKEN: ${PW_HEC_TOKEN}
+    volumes:
+      - ./config:/app/config:ro
+      - events:/events
+
+volumes:
+  events:

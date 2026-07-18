@@ -1,5 +1,9 @@
 # PromptWarden
 
+[![CI](https://github.com/lohith80/promptwarden/actions/workflows/ci.yml/badge.svg)](https://github.com/lohith80/promptwarden/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+
 **A security gateway for LLM APIs with SOC-grade telemetry.**
 
 PromptWarden is a self-hosted reverse proxy that sits between your

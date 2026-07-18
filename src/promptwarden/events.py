@@ -1,6 +1,6 @@
 """Security event emission: OCSF-aligned JSON + CEF, with pluggable sinks.
 
-Events never contain Authorization headers, API keys, or full raw prompts —
+Events never contain Authorization headers, API keys, or full raw prompts -
 only truncated/masked evidence produced by the detectors. That constraint is
 part of the threat model (the event pipeline itself must not become the leak).
 """

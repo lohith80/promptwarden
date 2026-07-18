@@ -9,7 +9,7 @@
 PromptWarden is a self-hosted reverse proxy that sits between your
 applications and an OpenAI-compatible LLM API. It inspects every request and
 response for prompt injection, jailbreaks, secret/PII egress, and system
-prompt leakage — and emits **OCSF-aligned security events with Splunk and
+prompt leakage - and emits **OCSF-aligned security events with Splunk and
 Microsoft Sentinel content included**, every finding mapped to the
 **OWASP LLM Top 10 (2025)** and **MITRE ATLAS**.
 
@@ -30,7 +30,7 @@ flowchart LR
 
 ## Features
 
-- **Inline inspection, both directions** — inbound prompts and outbound model
+- **Inline inspection, both directions** - inbound prompts and outbound model
   responses, with `allow` / `flag` / `block` actions driven by severity
   thresholds in a YAML policy.
 - **Layered detectors**
@@ -46,14 +46,14 @@ flowchart LR
     (severity 10, confidence 1.0).
   - *Denylist*: operator-defined regex rules (classification markers,
     codenames, internal hostnames) with no code changes.
-- **SIEM-native telemetry** — OCSF Detection Finding (class 2004) JSON events
+- **SIEM-native telemetry** - OCSF Detection Finding (class 2004) JSON events
   and a CEF formatter; sinks for stdout, JSONL file, and Splunk HTTP Event
   Collector. Starter Splunk saved searches and Sentinel KQL live in
   [`dashboards/`](dashboards/).
-- **Framework-mapped** — every rule carries its OWASP LLM Top 10 category and
+- **Framework-mapped** - every rule carries its OWASP LLM Top 10 category and
   MITRE ATLAS technique, so SOC dashboards and ATT&CK/ATLAS coverage maps work
   out of the box.
-- **Threat-modeled** — this gateway is itself security software;
+- **Threat-modeled** - this gateway is itself security software;
   [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) applies STRIDE to it and states
   residual risks honestly.
 
@@ -100,7 +100,7 @@ Without Docker: `pip install -e ".[dev]"` then
 
 Numbers are produced by the test suite (`pytest -s`, see
 [tests/test_corpus.py](tests/test_corpus.py)) against the versioned corpus in
-[tests/corpus/](tests/corpus/) — rerun them yourself; they are enforced in CI.
+[tests/corpus/](tests/corpus/) - rerun them yourself; they are enforced in CI.
 
 | Metric | v0.1.0 result | CI gate |
 |--------|---------------|---------|
@@ -110,7 +110,7 @@ Numbers are produced by the test suite (`pytest -s`, see
 
 The benign corpus is deliberately adversarial-adjacent ("ignore case when
 comparing strings", "what are the system requirements") to keep the rules
-honest. **A pattern engine is a tripwire, not a boundary** — see the threat
+honest. **A pattern engine is a tripwire, not a boundary** - see the threat
 model for what this tool does and does not claim.
 
 ## Detection Coverage Map
@@ -127,7 +127,7 @@ model for what this tool does and does not claim.
 | PW-H009 | Markdown image beacon (exfil channel) | LLM05 Improper Output Handling | AML.T0057 |
 | PW-S001..S007 | Secrets / PII egress (keys, JWTs, SSN, cards, entropy) | LLM02 Sensitive Info Disclosure | AML.T0057 |
 | PW-C001 | Canary token leak (deterministic) | LLM07 | AML.T0057 |
-| PW-D* | Operator denylist rules | LLM02 | — |
+| PW-D* | Operator denylist rules | LLM02 | - |
 
 ## Configuration
 
@@ -161,4 +161,4 @@ change.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0 - see [LICENSE](LICENSE).

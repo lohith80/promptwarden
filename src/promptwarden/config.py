@@ -7,7 +7,7 @@ Environment variables (deployment concerns):
   PW_HEC_URL            optional Splunk HEC endpoint (e.g. https://splunk:8088)
   PW_HEC_TOKEN          Splunk HEC token (never logged)
 
-Policy YAML (security decisions) — see config/policy.example.yaml.
+Policy YAML (security decisions) - see config/policy.example.yaml.
 """
 
 from __future__ import annotations

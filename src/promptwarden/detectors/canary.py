@@ -3,7 +3,7 @@
 Operators plant canary tokens inside system prompts (see generate_canary and
 the policy `detectors.canary.tokens` list). A canary appearing in outbound
 model text is deterministic evidence of system prompt leakage: severity 10,
-confidence 1.0 — no heuristics involved.
+confidence 1.0 - no heuristics involved.
 """
 
 from __future__ import annotations

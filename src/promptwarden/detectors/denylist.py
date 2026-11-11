@@ -18,17 +18,21 @@ class DenyRule:
     pattern: re.Pattern
     severity: int
     description: str
+    directions: tuple[str, ...] = ("inbound", "outbound")
 
 
-def compile_rules(raw_rules: list[dict]) -> list[DenyRule]:
+def compile_rules(raw_rules: list) -> list[DenyRule]:
+    """Compile rules from policy. Accepts DenyRuleConfig models or plain dicts."""
     rules = []
     for raw in raw_rules:
+        data = raw if isinstance(raw, dict) else raw.model_dump()
         rules.append(
             DenyRule(
-                rule_id=str(raw["id"]),
-                pattern=re.compile(raw["pattern"]),
-                severity=int(raw.get("severity", 6)),
-                description=str(raw.get("description", "Denylist pattern match")),
+                rule_id=str(data["id"]),
+                pattern=re.compile(data["pattern"]),
+                severity=int(data.get("severity", 6)),
+                description=str(data.get("description", "Denylist pattern match")),
+                directions=tuple(data.get("directions") or ("inbound", "outbound")),
             )
         )
     return rules
@@ -37,6 +41,8 @@ def compile_rules(raw_rules: list[dict]) -> list[DenyRule]:
 def scan(text: str, direction: Direction, rules: list[DenyRule]) -> list[Detection]:
     detections: list[Detection] = []
     for rule in rules:
+        if direction not in rule.directions:
+            continue
         match = rule.pattern.search(text)
         if match:
             detections.append(

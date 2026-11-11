@@ -1,0 +1,48 @@
+# Default deny, then allow exactly what the gateway needs. Adjust the
+# selectors and CIDRs to your cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: promptwarden
+  namespace: promptwarden
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: promptwarden
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Application namespaces that are allowed to call the gateway.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              promptwarden.io/client: "true"
+      ports:
+        - port: 8080
+    # Prometheus scraping /metrics.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Upstream LLM API and SIEM over TLS. Replace with an egress gateway or
+    # FQDN policy (Cilium, Calico) to pin this to specific hosts.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - port: 443
+        - port: 8088

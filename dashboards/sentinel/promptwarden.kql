@@ -23,7 +23,7 @@ PromptWarden_CL
     app = tostring(e.metadata.app_id)
 | where attempts > 10
 
-// 3. Canary token leak — deterministic system prompt leakage (incident-grade)
+// 3. Canary token leak - deterministic system prompt leakage (incident-grade)
 PromptWarden_CL
 | extend e = parse_json(RawData)
 | mv-expand finding = e.finding_info
@@ -31,7 +31,7 @@ PromptWarden_CL
 | project TimeGenerated, app = tostring(e.metadata.app_id),
     request_id = tostring(e.metadata.uid)
 
-// 4. MITRE ATLAS technique frequency (7d) — maps LLM abuse to ATLAS
+// 4. MITRE ATLAS technique frequency (7d) - maps LLM abuse to ATLAS
 PromptWarden_CL
 | where TimeGenerated > ago(7d)
 | extend e = parse_json(RawData)
@@ -40,3 +40,83 @@ PromptWarden_CL
 | summarize count() by technique = tostring(finding.mitre_atlas),
     action = tostring(e.status)
 | order by count_ desc
+
+// --- v0.2 content: agent traffic, shadow mode, tenancy, consumption ---------
+// Finding events have class_uid 2004; audit records have class_uid 6003.
+
+// 5. Tool poisoning or tool definition change (candidate analytics rule)
+PromptWarden_CL
+| where TimeGenerated > ago(24h)
+| extend e = parse_json(RawData)
+| where toint(e.class_uid) == 2004
+| mv-expand finding = e.finding_info
+| where tostring(finding.rule_id) in ("PW-T002", "PW-T003", "PW-T004", "PW-T005")
+| summarize hits = count(), first_seen = min(TimeGenerated), last_seen = max(TimeGenerated)
+    by rule_id = tostring(finding.rule_id), tool = tostring(finding.tool_name),
+       app = tostring(e.metadata.app_id)
+
+// 6. Denied tool call attempts (PW-T001) by app and user
+PromptWarden_CL
+| where TimeGenerated > ago(24h)
+| extend e = parse_json(RawData)
+| mv-expand finding = e.finding_info
+| where tostring(finding.rule_id) == "PW-T001"
+| summarize attempts = count() by tool = tostring(finding.tool_name),
+    app = tostring(e.metadata.app_id), user = tostring(e.actor.user)
+
+// 7. Indirect injection by data source (tool results, documents, tool definitions)
+PromptWarden_CL
+| where TimeGenerated > ago(7d)
+| extend e = parse_json(RawData)
+| mv-expand finding = e.finding_info
+| where tostring(finding.mitre_atlas) == "AML.T0051.001"
+| summarize hits = count() by source = tostring(finding.source),
+    app = tostring(e.metadata.app_id), disposition = tostring(e.disposition)
+| order by hits desc
+
+// 8. Data leaving through tool calls (secret or canary in tool arguments)
+PromptWarden_CL
+| extend e = parse_json(RawData)
+| mv-expand finding = e.finding_info
+| where tostring(finding.mitre_atlas) == "AML.T0086"
+| project TimeGenerated, app = tostring(e.metadata.app_id), user = tostring(e.actor.user),
+    tool = tostring(finding.tool_name), rule_id = tostring(finding.rule_id),
+    request_id = tostring(e.metadata.uid)
+
+// 9. Shadow mode rollout report: what enforce would have blocked
+PromptWarden_CL
+| where TimeGenerated > ago(7d)
+| extend e = parse_json(RawData)
+| where tostring(e.disposition) == "would_block"
+| mv-expand finding = e.finding_info
+| summarize hits = count(), requests = dcount(tostring(e.metadata.uid))
+    by app = tostring(e.metadata.app_id), rule_id = tostring(finding.rule_id)
+| order by hits desc
+
+// 10. Obfuscated payloads: detections that only fired after de-obfuscation
+PromptWarden_CL
+| where TimeGenerated > ago(7d)
+| extend e = parse_json(RawData)
+| mv-expand finding = e.finding_info
+| where finding.tags has "obfuscated"
+| summarize hits = count() by app = tostring(e.metadata.app_id),
+    user = tostring(e.actor.user), src_ip = tostring(e.src_endpoint.ip)
+| order by hits desc
+
+// 11. Token spend by app and model (requires audit.enabled)
+PromptWarden_CL
+| where TimeGenerated > ago(7d)
+| extend e = parse_json(RawData)
+| where toint(e.class_uid) == 6003
+| summarize prompt_tokens = sum(tolong(e.usage.prompt_tokens)),
+    completion_tokens = sum(tolong(e.usage.completion_tokens)), requests = count()
+    by app = tostring(e.metadata.app_id), model = tostring(e.llm.model)
+| order by completion_tokens desc
+
+// 12. Policy change detection: every policy version that produced events
+PromptWarden_CL
+| where TimeGenerated > ago(7d)
+| extend e = parse_json(RawData)
+| summarize first_seen = min(TimeGenerated), last_seen = max(TimeGenerated), events = count()
+    by policy_hash = tostring(e.metadata.policy_hash), mode = tostring(e.metadata.mode)
+| order by first_seen asc

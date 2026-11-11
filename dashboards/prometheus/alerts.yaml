@@ -1,0 +1,72 @@
+# Prometheus alerting rules for the gateway itself (health of the control,
+# as opposed to the security findings, which belong in the SIEM).
+groups:
+  - name: promptwarden
+    rules:
+      - alert: PromptWardenEventsDropped
+        expr: increase(promptwarden_events_dropped_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Security events are being dropped
+          description: >-
+            The event queue filled up, so findings were lost before reaching a
+            sink. Check sink health (Splunk HEC, webhook, syslog) and consider
+            raising PW_EVENT_QUEUE_SIZE.
+
+      - alert: PromptWardenPolicyReloadRejected
+        expr: increase(promptwarden_policy_reloads_total{result="rejected"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A policy change was rejected
+          description: >-
+            The gateway kept its previous policy because the new file is
+            invalid. Run `promptwarden validate-policy` on the deployed file.
+
+      - alert: PromptWardenMonitorMode
+        expr: promptwarden_policy_info{mode="monitor"} == 1
+        for: 30d
+        labels:
+          severity: info
+        annotations:
+          summary: Gateway has been in monitor mode for 30 days
+          description: >-
+            Monitor mode blocks nothing. If the rollout review is done, switch
+            gateway.mode to enforce.
+
+      - alert: PromptWardenInspectionSlow
+        expr: >-
+          histogram_quantile(0.99,
+            sum by (le, direction) (rate(promptwarden_inspection_seconds_bucket[5m]))) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p99 inspection time above 100 ms
+          description: >-
+            Inspection runs on the request path. Look for very large bodies
+            (lower gateway.max_body_bytes) or add workers.
+
+      - alert: PromptWardenBlockSpike
+        expr: >-
+          sum by (app) (rate(promptwarden_requests_total{outcome=~"blocked_.*"}[5m]))
+            / sum by (app) (rate(promptwarden_requests_total[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 20% of an app's requests are being blocked
+          description: >-
+            Either the app is under attack or a policy change introduced false
+            positives. Compare with the SIEM findings for the same app.
+
+      - alert: PromptWardenUpstreamErrors
+        expr: >-
+          sum(rate(promptwarden_requests_total{outcome="upstream_error"}[5m]))
+            / sum(rate(promptwarden_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 10% of requests fail at the upstream LLM API

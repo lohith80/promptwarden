@@ -1,0 +1,21 @@
+# Inspection is CPU-bound and runs on the request path, so CPU is the right
+# scaling signal. Note: rate limits are per replica (see docs/DEPLOYMENT.md).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: promptwarden
+  namespace: promptwarden
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: promptwarden
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

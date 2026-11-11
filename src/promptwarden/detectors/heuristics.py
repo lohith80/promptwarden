@@ -39,6 +39,17 @@ class PatternRule:
     # When set, the rule only applies to text from these sources.
     sources: frozenset[str] | None = None
     owasp_agentic: str | None = None
+    # Skip a match that is directly negated ("do not reveal your system
+    # prompt" is a defensive instruction, not a probe).
+    negatable: bool = False
+    # Severity when the text is the caller's own turn. A user asking for an
+    # image beacon in their own chat only "exfiltrates" what they can already
+    # read; the same pattern in tool output or model output is the attack.
+    user_severity: int | None = None
+    # Lowercase substrings, at least one of which must be present before the
+    # regex is tried. A plain substring test is far cheaper than a large
+    # alternation, and inspection time is on the request path.
+    prefilter: tuple[str, ...] = ()
 
 
 _AI_ENTITY = (
@@ -70,6 +81,7 @@ PATTERN_RULES: list[PatternRule] = [
         description="System prompt exfiltration probe",
         owasp_llm="LLM07",
         atlas="AML.T0056",
+        negatable=True,
     ),
     PatternRule(
         rule_id="PW-H003",
@@ -113,6 +125,7 @@ PATTERN_RULES: list[PatternRule] = [
         description="Markdown image beacon with query parameters (data exfiltration channel)",
         owasp_llm="LLM05",
         atlas="AML.T0057",
+        user_severity=5,
     ),
     PatternRule(
         rule_id="PW-H011",
@@ -151,6 +164,12 @@ PATTERN_RULES: list[PatternRule] = [
         description="Instruction override attempt in a non-English language",
         owasp_llm="LLM01",
         atlas="AML.T0051",
+        prefilter=(
+            "ignora", "ignore", "olvida", "omite", "descarta", "oublie", "ignoriere",
+            "ignorieren", "vergiss", "missachte", "esqueça", "esqueca", "desconsidere",
+            "dimentica", "игнорируй", "забудь", "忽略", "无视", "忘记", "忽視", "無視", "忘記",
+            "忘れ", "무시", "잊어",
+        ),
     ),
     PatternRule(
         rule_id="PW-H012",
@@ -177,6 +196,66 @@ PATTERN_RULES: list[PatternRule] = [
         owasp_agentic="ASI01",
     ),
 ]
+
+_NEGATION = re.compile(
+    r"(?i)\b(never|not|don'?t|cannot|can'?t|won'?t|shouldn'?t|mustn'?t|refuse\s+to)\s+"
+    r"(ever\s+)?(to\s+)?$"
+)
+
+# Policy-evasion language. Each phrase alone is too common to act on (role-play
+# prompts say "stay in character" all the time); several different ones in the
+# same prompt is the signature of a persona jailbreak. Chosen and thresholded
+# on the dev half of a public in-the-wild dataset; see the README benchmark.
+_EVASION_SIGNALS: list[tuple[tuple[str, ...], re.Pattern]] = [
+    (prefilter, re.compile(pattern))
+    for prefilter, pattern in (
+        (("character",),
+         r"(?i)\b(stay|remain)\s+in\s+character\b|\bnever\s+break\s+character\b"
+         r"|\bbreak(ing)?\s+character\b"),
+        (("restriction", "limitation", "filter", "censorship", "boundaries", "guidelines"),
+         r"(?i)\b(no|without(\s+any)?|free\s+(of|from)(\s+all|\s+any)?)\s+"
+         r"(restrictions?|limitations?|filters?|censorship|boundaries|ethical\s+guidelines"
+         r"|moral\s+guidelines)\b"),
+        (("bound", "restricted", "limited", "constrained"),
+         r"(?i)\b(not|no\s+longer|isn'?t|aren'?t)\s+(bound|restricted|limited|constrained)"
+         r"\s+by\b"),
+        (("polic", "openai", "open ai"),
+         r"(?i)\b(openai'?s?|open\s+ai'?s?)\s+(content\s+)?(policy|policies|guidelines|rules)\b"
+         r"|\bcontent\s+polic(y|ies)\b"),
+        (("unfiltered", "uncensored", "unrestricted", "amoral"),
+         r"(?i)\b(unfiltered|uncensored|unrestricted|amoral)\b"),
+        (("ethic", "moral", "legal"),
+         r"(?i)\b(no|without(\s+any)?|disregard(s|ing)?|ignor(e|es|ing))\s+"
+         r"(ethic(s|al)?|moral(s|ity)?|legal(ity)?)\b"),
+        (("illegal", "unethical", "immoral", "harmful"),
+         r"(?i)\b(illegal|unethical|immoral|harmful)\s*(or|and|,)\s*"
+         r"(illegal|unethical|immoral|harmful|explicit)\b"),
+        (("refuse", "decline", "reject", "deny"),
+         r"(?i)\b(never|not|cannot|can'?t|won'?t|will\s+not|does\s+not|doesn'?t)\s+"
+         r"(refuse|decline|reject|deny)\b"),
+        (("matter",),
+         r"(?i)\bno\s+matter\s+how\s+(immoral|unethical|illegal|dangerous|harmful|explicit"
+         r"|offensive)\b"),
+        (("follow", "abide", "adhere", "obey", "care"),
+         r"(?i)\b(does(n'?t|\s+not)|do(n'?t|\s+not)|never)\s+(have\s+to\s+)?"
+         r"(follow|abide\s+by|adhere\s+to|obey|care\s+about)\s+(any\s+|the\s+|openai'?s?\s+)?"
+         r"(rules|guidelines|polic(y|ies)|restrictions|laws|ethics)\b"),
+        (("answer", "respond", "comply", "anything", "do "),
+         r"(?i)\b(answer|respond\s+to|comply\s+with|do)\s+(any|every|all)\s*"
+         r"(thing|request|question|prompt)s?\b|\bcan\s+do\s+anything\b"),
+        (("warning", "disclaimer", "moral", "ethical"),
+         r"(?i)\b(no|without|never|don'?t|do\s+not)\s+(include\s+|add\s+|give\s+)?(any\s+)?"
+         r"(warnings?|disclaimers?|moral(izing)?|ethical\s+advice)\b"),
+        (("freed", "liberated", "broken", "escaped"),
+         r"(?i)\b(freed|liberated|broken\s+free|escaped)\s+(from|of)\b"),
+        (("pretend", "roleplay", "role-play", " act"),
+         r"(?i)\b(you\s+are\s+going\s+to|you\s+will|you'?re\s+going\s+to)\s+"
+         r"(pretend|act|roleplay|role-play)\b"),
+        (("from now",),
+         r"(?i)\bfrom\s+now\s+on,?\s+you\s+(are|will|must|shall)\b"),
+    )
+]
+EVASION_THRESHOLD = 3
 
 _BASE64_BLOB = re.compile(r"[A-Za-z0-9+/=]{80,}")
 _DECODE_HINT = re.compile(r"(?i)\b(decode|base64|rot13|hex)\b")
@@ -215,27 +294,40 @@ def _match_rules(
     text: str, direction: Direction, source: str | None, skip: set[str]
 ) -> list[tuple[PatternRule, re.Match]]:
     hits: list[tuple[PatternRule, re.Match]] = []
+    lowered = text.lower()
     for rule in PATTERN_RULES:
         if rule.rule_id in skip or direction not in rule.directions:
             continue
         if rule.sources is not None and source not in rule.sources:
             continue
+        if rule.prefilter and not any(word in lowered for word in rule.prefilter):
+            continue
         match = rule.pattern.search(text)
+        if match and rule.negatable:
+            match = next(
+                (m for m in rule.pattern.finditer(text)
+                 if not _NEGATION.search(text[max(0, m.start() - 24):m.start()])),
+                None,
+            )
         if match:
             hits.append((rule, match))
     return hits
 
 
-def _detection(rule: PatternRule, evidence: str, *, obfuscated: bool = False) -> Detection:
+def _detection(rule: PatternRule, evidence: str, source: str | None = None, *,
+               obfuscated: bool = False) -> Detection:
     description = rule.description
     tags: list[str] = []
     if obfuscated:
         description += " (revealed after de-obfuscation)"
         tags = ["obfuscated", "AML.T0068"]
+    severity = rule.severity
+    if rule.user_severity is not None and source == "user":
+        severity = rule.user_severity
     return Detection(
         detector="heuristics",
         rule_id=rule.rule_id,
-        severity=rule.severity,
+        severity=severity,
         confidence=0.8,
         description=description,
         evidence=evidence,
@@ -252,14 +344,14 @@ def scan(text: str, direction: Direction, source: str | None = None) -> list[Det
 
     for rule, match in _match_rules(text, direction, source, fired):
         fired.add(rule.rule_id)
-        detections.append(_detection(rule, match.group(0)))
+        detections.append(_detection(rule, match.group(0), source))
 
     # Layer 1: canonical variants. Only rules that did not fire on the raw
     # text are tried, so a hit here means the obfuscation was load-bearing.
     for variant in normalize(text):
         for rule, match in _match_rules(variant, direction, source, fired):
             fired.add(rule.rule_id)
-            detections.append(_detection(rule, match.group(0), obfuscated=True))
+            detections.append(_detection(rule, match.group(0), source, obfuscated=True))
 
     # A long blob next to a decode instruction, where the blob decodes to
     # readable text. Binary payloads (images, keys) pasted alongside the word
@@ -319,6 +411,30 @@ def scan(text: str, direction: Direction, source: str | None = None) -> list[Det
                 )
             )
             break
+
+    if direction == "inbound":
+        lowered = text.lower()
+        signals = [
+            match.group(0)
+            for prefilter, pattern in _EVASION_SIGNALS
+            if any(word in lowered for word in prefilter) and (match := pattern.search(text))
+        ]
+        if len(signals) >= EVASION_THRESHOLD:
+            detections.append(
+                Detection(
+                    detector="heuristics",
+                    rule_id="PW-H013",
+                    severity=7 if len(signals) >= 5 else 6,
+                    confidence=min(0.5 + 0.08 * len(signals), 0.9),
+                    description=(
+                        f"Stacked policy-evasion language ({len(signals)} distinct signals): "
+                        "persona jailbreak"
+                    ),
+                    evidence="; ".join(signals)[:80],
+                    owasp_llm="LLM01",
+                    atlas="AML.T0054",
+                )
+            )
 
     invisible = count_invisible(text)
     if invisible >= INVISIBLE_THRESHOLD:

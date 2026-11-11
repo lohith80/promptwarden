@@ -148,4 +148,4 @@ class TestCatalog:
 
         _, out, _ = run(capsys, "rules")
         doc = Path("docs/DETECTIONS.md").read_text(encoding="utf-8")
-        assert out.strip() in doc, "regenerate docs/DETECTIONS.md with `promptwarden rules`"
+        assert out.strip() in doc, "run: python scripts/gen_detections_doc.py"

@@ -1,6 +1,6 @@
 from promptwarden.normalize import count_invisible, decode_tag_block, normalize
 
-ZWSP, ZWNJ, ZWJ = "​", "\u200c", "‍"
+ZWSP, ZWNJ, ZWJ = "\u200b", "\u200c", "\u200d"
 
 
 def tagged(text: str) -> str:

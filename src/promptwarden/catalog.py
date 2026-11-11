@@ -34,6 +34,8 @@ _FUNCTIONAL: list[RuleInfo] = [
              "heuristics", 9, "LLM01", None, "AML.T0051"),
     RuleInfo("PW-H010", "Base64 payload that decodes to an injection",
              "heuristics", 9, "LLM01", None, "AML.T0051"),
+    RuleInfo("PW-H013", "Stacked policy-evasion language (persona jailbreak)",
+             "heuristics", 6, "LLM01", None, "AML.T0054", "inbound"),
     RuleInfo("PW-S006", "Payment card number (Luhn-valid)", "secrets", 9, "LLM02", None,
              "AML.T0057"),
     RuleInfo("PW-S007", "High-entropy token (possible credential)", "secrets", 5, "LLM02", None,

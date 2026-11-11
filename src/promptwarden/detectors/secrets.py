@@ -105,6 +105,16 @@ SECRET_RULES: list[SecretRule] = [
 _CARD_CANDIDATE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 _ENTROPY_TOKEN = re.compile(r"\b[A-Za-z0-9+/_=-]{28,}\b")
 _MAX_ENTROPY_TOKEN = 72
+_DOMAIN_PREFIX = re.compile(r"[A-Za-z0-9-]\.[A-Za-z]{2,}[/?]?$")
+
+
+def _in_url(text: str, position: int) -> bool:
+    """True when the token at position is part of a URL (a long path or query
+    string is high-entropy but is not a credential)."""
+    start = max(text.rfind(" ", 0, position), text.rfind("\n", 0, position),
+                text.rfind("(", 0, position), text.rfind('"', 0, position)) + 1
+    prefix = text[start:position]
+    return "://" in prefix or prefix.startswith("www.") or bool(_DOMAIN_PREFIX.search(prefix))
 
 
 def _luhn_ok(digits: str) -> bool:
@@ -132,7 +142,9 @@ def _card_spans(text: str) -> list[tuple[int, int, str]]:
     for candidate in _CARD_CANDIDATE.finditer(text):
         raw = candidate.group(0).rstrip(" -")
         digits = re.sub(r"[ -]", "", raw)
-        if 13 <= len(digits) <= 19 and _luhn_ok(digits):
+        # Every major card network issues numbers starting 2-6; a Luhn-valid
+        # run starting with anything else is an order or tracking number.
+        if 13 <= len(digits) <= 19 and digits[0] in "23456" and _luhn_ok(digits):
             spans.append((candidate.start(), candidate.start() + len(raw), digits))
     return spans
 
@@ -174,6 +186,8 @@ def scan(text: str, direction: Direction) -> list[Detection]:
         # Credentials are short. A very long high-entropy run is encoded
         # data (an image, an archive), not a key.
         if len(token) > _MAX_ENTROPY_TOKEN:
+            continue
+        if _in_url(text, token_match.start()):
             continue
         if has_alpha and has_digit and _shannon_entropy(token) >= 4.2:
             detections.append(

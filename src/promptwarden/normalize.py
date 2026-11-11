@@ -18,18 +18,18 @@ import unicodedata
 
 # Characters that render as nothing. Stripped before matching.
 _INVISIBLE_RE = re.compile(
-    "[­͏؜᠎​-‏‪-‮⁠-⁤"
-    "⁦-⁯﻿\U000e0000-\U000e007f]"
+    "[\u00ad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
+    "\u2066-\u206f\ufeff\U000e0000-\U000e007f]"
 )
 
 # Unicode tag block: U+E0020..U+E007E mirror printable ASCII.
 _TAG_RE = re.compile("[\U000e0020-\U000e007e]+")
 
 # Always suspicious when present in bulk.
-_HARD_INVISIBLE = frozenset("​⁠﻿") | {chr(c) for c in range(0xE0000, 0xE0080)}
+_HARD_INVISIBLE = frozenset("\u200b\u2060\ufeff") | {chr(c) for c in range(0xE0000, 0xE0080)}
 # Legitimate inside emoji sequences and in scripts such as Persian or Hindi;
 # only suspicious next to ASCII text or other invisible characters.
-_SOFT_INVISIBLE = frozenset("‌‍")
+_SOFT_INVISIBLE = frozenset("\u200c\u200d")
 
 # Lookalike letters folded to Latin. Applied only to mixed-script tokens so
 # ordinary Russian or Greek text is left alone.

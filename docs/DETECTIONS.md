@@ -1,11 +1,14 @@
 # Detection catalog
 
 Every rule ID PromptWarden can emit, with its framework mappings. This file is
-generated from the code and checked in CI, so it cannot drift:
+generated from the code and checked in CI, so it cannot drift. Regenerate it
+after adding or changing a rule:
 
 ```bash
-promptwarden rules
+python scripts/gen_detections_doc.py
 ```
+
+The same data as JSON, for SIEM lookups and coverage maps:
 
 ```bash
 promptwarden rules --format json
@@ -23,6 +26,7 @@ documents are reported as `AML.T0051.001` (indirect); secrets or canaries
 found in tool-call arguments are reported as `AML.T0086` (exfiltration via
 agent tool invocation).
 
+<!-- rules:start -->
 | Rule | Detects | Severity | OWASP LLM | OWASP Agentic | MITRE ATLAS | Scope |
 |------|---------|----------|-----------|---------------|-------------|-------|
 | PW-C001 | Canary token from the system prompt found in model output | 10 | LLM07 | - | AML.T0057 | outbound |
@@ -42,6 +46,7 @@ agent tool invocation).
 | PW-H010 | Base64 payload that decodes to an injection | 9 | LLM01 | - | AML.T0051 | inbound, outbound |
 | PW-H011 | Instruction override attempt in a non-English language | 8 | LLM01 | - | AML.T0051 | inbound, outbound |
 | PW-H012 | Instruction addressed to the AI inside tool output or a document | 7 | LLM01 | ASI01 | AML.T0051.001 | tool results, documents |
+| PW-H013 | Stacked policy-evasion language (persona jailbreak) | 6 | LLM01 | - | AML.T0054 | inbound |
 | PW-S001 | AWS access key ID | 9 | LLM02 | - | AML.T0057 | inbound, outbound |
 | PW-S002 | Private key material | 10 | LLM02 | - | AML.T0057 | inbound, outbound |
 | PW-S003 | API secret key (sk- prefix) | 9 | LLM02 | - | AML.T0057 | inbound, outbound |
@@ -62,3 +67,4 @@ agent tool invocation).
 | PW-X001 | Reference-style markdown image beacon | 8 | LLM05 | - | AML.T0057 | inbound, outbound |
 | PW-X002 | HTML image tag with query parameters | 8 | LLM05 | - | AML.T0057 | inbound, outbound |
 | PW-X003 | Image URL outside the allowed image domains | 8 | LLM05 | - | AML.T0057 | outbound |
+<!-- rules:end -->

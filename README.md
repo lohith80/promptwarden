@@ -244,7 +244,7 @@ python scripts/eval_public_dataset.py --cache /tmp/pw-eval
 | Held-out half | Samples | Flagged or blocked | Blocked |
 |---------------|---------|--------------------|---------|
 | Jailbreak prompts | 715 | 342 (47.8%) | 33 (4.6%) |
-| Regular prompts | 6,812 | 731 (10.7%) | 457 (6.7%) |
+| Regular prompts | 6,812 | 733 (10.8%) | 457 (6.7%) |
 
 How to read this:
 
@@ -254,7 +254,7 @@ How to read this:
   ceiling of this approach and the reason a classifier detector is the first
   item on the [roadmap](docs/ROADMAP.md).
 - The regular-prompt figure is not a false positive rate for enterprise
-  traffic. 435 of the 731 hits are the literal phrase "ignore all previous
+  traffic. 435 of the 733 hits are the literal phrase "ignore all previous
   instructions" (or a close variant) used as a prompt-sharing opener. The
   dataset labels by intent; a gateway protecting a system prompt has to treat
   that phrase as an override attempt. Run `promptwarden bench` on your own
@@ -287,15 +287,21 @@ container (Python 3.13), default policy, plain English text:
 
 | Prompt size | p50 inspection time |
 |-------------|---------------------|
-| 500 characters | 0.19 ms |
-| 2,000 characters | 0.75 ms |
-| 10,000 characters | 3.7 ms |
-| 50,000 characters | 18.8 ms |
+| 500 characters | 0.17 ms |
+| 2,000 characters | 0.64 ms |
+| 10,000 characters | 3.1 ms |
+| 50,000 characters | 16.6 ms |
 
 On the public dataset above (mean 1,661 characters, adversarial text that
-triggers more rules) p50 was 0.48 ms and p99 13.9 ms. Window-mode streaming
+triggers more rules) p50 was 0.40 ms and p99 12.0 ms. Window-mode streaming
 delays the first token by the time the model takes to produce
 `holdback_chars` (256 by default); monitor mode adds no stream latency.
+
+Hostile input is a separate question: text built to make the rules work as
+hard as possible. Every rule is linear in input size, and
+[`tests/test_performance.py`](tests/test_performance.py) enforces that with a
+scaling check on 25 adversarial inputs. Bodies of 32 KB and above are
+inspected on a worker thread so one large request cannot stall the others.
 
 ## Detection coverage
 

@@ -83,6 +83,9 @@ _RETURN_HEADERS = {
     "x-ratelimit-reset-tokens",
 }
 
+# Bodies at or above this size are inspected on a worker thread.
+_OFFLOAD_BYTES = 32_768
+
 _CORRELATION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _WITHHELD = (
     "[PromptWarden] Response withheld: outbound content matched blocking policy "
@@ -118,6 +121,7 @@ class _Call:
     usage: dict | None = None
     rule_ids: list[str] = field(default_factory=list)
     finalized: bool = False
+    body_bytes: int = 0
 
 
 def build_runtime(settings: Settings, registry: ToolRegistry | None = None) -> Runtime:
@@ -311,6 +315,19 @@ class Gateway:
         )
         return verdict
 
+    async def _inspect_async(self, runtime: Runtime, payload: InspectionInput, direction: str,
+                             eff: EffectiveConfig, size: int) -> Verdict:
+        """Inspect, moving large payloads off the event loop.
+
+        Inspection is CPU-bound. For a typical prompt it takes well under a
+        millisecond and a thread hop would cost more than it saves. For a
+        large body it can take long enough to stall every other connection
+        on this worker, so it runs on a thread and the loop stays responsive.
+        """
+        if size < _OFFLOAD_BYTES:
+            return self._inspect(runtime, payload, direction, eff)
+        return await asyncio.to_thread(self._inspect, runtime, payload, direction, eff)
+
     def _record(self, call: _Call, verdict: Verdict, direction: str) -> None:
         """Count detections, emit the finding event, update the call outcome."""
         for detection in verdict.detections:
@@ -395,6 +412,7 @@ class Gateway:
             return auth, None, self._reject(
                 call, 413, "promptwarden_limit", "request too large", "too_large"
             )
+        call.body_bytes = len(raw)
         try:
             body = json.loads(raw)
         except ValueError:
@@ -478,7 +496,7 @@ class Gateway:
         if payload.uninspected_parts:
             self.metrics.uninspected_parts.labels(app=eff.app_id).inc(payload.uninspected_parts)
 
-        inbound = self._inspect(runtime, payload, "inbound", eff)
+        inbound = await self._inspect_async(runtime, payload, "inbound", eff, call.body_bytes)
         self._record(call, inbound, "inbound")
         if inbound.action == "block":
             return self._blocked_response(call, runtime, inbound), False
@@ -503,15 +521,15 @@ class Gateway:
             return self._reject(call, 502, "promptwarden_upstream", "upstream unreachable",
                                 "upstream_error"), False
         self._observe_upstream(call, started)
-        return self._finish_json(call, runtime, eff, upstream, upstream.content), False
+        return await self._finish_json(call, runtime, eff, upstream, upstream.content), False
 
     def _observe_upstream(self, call: _Call, started: float) -> None:
         elapsed = time.perf_counter() - started
         call.upstream_ms = elapsed * 1000
         self.metrics.upstream_seconds.observe(elapsed)
 
-    def _finish_json(self, call: _Call, runtime: Runtime, eff: EffectiveConfig,
-                     upstream: httpx.Response, raw: bytes) -> Response:
+    async def _finish_json(self, call: _Call, runtime: Runtime, eff: EffectiveConfig,
+                           upstream: httpx.Response, raw: bytes) -> Response:
         """Inspect a complete (non-streamed) upstream response and return it."""
         call.status_code = upstream.status_code
         headers = self._return_headers(upstream, call)
@@ -532,7 +550,7 @@ class Gateway:
         if isinstance(response_body.get("usage"), dict):
             call.usage = response_body["usage"]
 
-        outbound = self._inspect(runtime, payload, "outbound", eff)
+        outbound = await self._inspect_async(runtime, payload, "outbound", eff, len(raw))
         self._record(call, outbound, "outbound")
         if outbound.action == "block":
             notice = _WITHHELD.format(request_id=call.ctx.request_id)
@@ -574,7 +592,7 @@ class Gateway:
             finally:
                 await upstream.aclose()
             self._observe_upstream(call, started)
-            return self._finish_json(call, runtime, eff, upstream, raw), False
+            return await self._finish_json(call, runtime, eff, upstream, raw), False
 
         streaming = runtime.policy.streaming
         inspector = StreamInspector(
@@ -651,7 +669,7 @@ class Gateway:
             return self._reject(call, 400, "promptwarden_bad_request", str(exc), "bad_request")
         call.prompt_chars = payload.char_count
 
-        inbound = self._inspect(runtime, payload, "inbound", eff)
+        inbound = await self._inspect_async(runtime, payload, "inbound", eff, call.body_bytes)
         self._record(call, inbound, "inbound")
         if inbound.action == "block":
             return self._blocked_response(call, runtime, inbound)

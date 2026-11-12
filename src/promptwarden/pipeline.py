@@ -87,8 +87,11 @@ class Pipeline:
     ) -> list[Detection]:
         detections: list[Detection] = []
         cfg = self.policy.detectors
+        # Monitor mode observes; it never changes traffic. A secret that would
+        # be redacted under enforce is reported as would_block instead.
         redact = (
             direction == "inbound"
+            and eff.mode == "enforce"
             and cfg.secrets.enabled
             and cfg.secrets.inbound_action == "redact"
         )

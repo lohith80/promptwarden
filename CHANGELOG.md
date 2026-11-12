@@ -25,6 +25,7 @@ Gateway
 - Monitor mode (`gateway.mode: monitor`): nothing is blocked, events carry
   `disposition: would_block`.
 - Inbound secret redaction (`detectors.secrets.inbound_action: redact`).
+  Applies in enforce mode only: monitor mode never rewrites traffic.
 - Per-app rate limits, model allowlists and output token caps.
 - `/v1/embeddings` with inbound inspection, `/v1/models` passthrough,
   `/readyz`, `/metrics` (Prometheus).
@@ -71,7 +72,7 @@ Tooling and operations
   dev/test split.
 - Kubernetes manifests with a restricted security context, NetworkPolicy,
   PodDisruptionBudget and HPA. Multi-stage Docker image.
-- Test suite grown from 35 to 274 tests, run on Python 3.10, 3.12 and 3.13.
+- Test suite grown from 35 to 309 tests, run on Python 3.10, 3.12 and 3.13.
 
 ### Changed
 - `stream: true` is now streamed and inspected. v0.1 silently downgraded it
@@ -93,6 +94,20 @@ Tooling and operations
   (retry and rate-limit headers, request ID).
 - The app object is built lazily: importing `promptwarden.app` no longer
   starts a gateway. `uvicorn promptwarden.app:app` still works.
+
+### Security
+- **Denial of service through a quadratic regular expression (present in
+  0.1.0).** The image-beacon rule PW-H009 rescanned the rest of the body from
+  every `![`. A 500 KB request of repeated `![`, well under the default 1 MB
+  body limit, held a worker for 67 seconds; inspection ran on the event loop,
+  so the whole gateway stopped answering. Image references are now extracted
+  by a linear scanner (`detectors/markup.py`). The same review pinned the JWT
+  and base64 patterns to the start of a run, bounded every open-ended
+  quantifier, and shortened chained windows in the tool-poisoning patterns.
+  `tests/test_performance.py` checks 25 hostile inputs for linear scaling.
+  Upgrade from 0.1.0.
+- Bodies of 32 KB and above are inspected on a worker thread, so a large
+  request no longer stalls other connections on the same worker.
 
 ### Fixed
 - Sink I/O (Splunk HEC, file) ran inside the async request handler and could

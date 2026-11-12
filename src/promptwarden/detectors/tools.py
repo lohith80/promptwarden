@@ -28,6 +28,7 @@ import fnmatch
 import hashlib
 import json
 import re
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -46,12 +47,14 @@ _SENSITIVE_PATH = re.compile(
     r"|\b(read|open|cat|load|send|upload|include|pass)\b[^.\n]{0,40}"
     r"(\.env\b|credentials(\.json)?\b|\bapi[_ ]keys?\b|\bsecrets?\b|\bprivate\s+keys?\b)"
 )
+# Windows are kept short on purpose: three chained windows multiply, and tool
+# text is attacker-supplied. See tests/test_performance.py.
 _PARAMETER_STUFFING = re.compile(
-    r"(?i)\b(pass|put|place|include|send|add|copy|provide)\b[^.\n]{0,60}"
+    r"(?i)\b(pass|put|place|include|send|add|copy|provide)\b[^.\n]{0,40}"
     r"\b(conversation|chat\s+history|system\s+prompt|previous\s+messages|file\s+contents?|"
-    r"credentials|secrets?|api\s+keys?|tokens?|passwords?)\b[^.\n]{0,60}"
-    r"\b(as|in|into|to|via|using)\b[^.\n]{0,24}"
-    r"\b(param(eter)?s?|arguments?|fields?|sidenote|notes?|metadata)\b"
+    r"credentials|secrets?|api\s+keys?|tokens?|passwords?)\b[^.\n]{0,30}"
+    r"\b(as|in|into|to|via|using)\s+(the\s+|an?\s+|this\s+|its\s+)?['\"`]?[a-z_]{0,20}['\"`]?\s?"
+    r"(param(eter)?s?|arguments?|fields?|sidenote|notes?|metadata)\b"
 )
 _MARKUP_DIRECTIVE = re.compile(r"(?i)<\s*(important|system|instructions?|secret|hidden)\s*>")
 _CROSS_TOOL = re.compile(
@@ -148,15 +151,17 @@ class ToolRegistry:
     def __init__(self, max_entries: int = 10_000):
         self._seen: OrderedDict[tuple[str, str], str] = OrderedDict()
         self._max = max_entries
+        self._lock = threading.Lock()  # large inspections run on worker threads
 
     def observe(self, app_id: str, name: str, digest: str) -> str | None:
         """Record a definition. Returns the previous hash if it changed."""
         key = (app_id, name)
-        previous = self._seen.get(key)
-        self._seen[key] = digest
-        self._seen.move_to_end(key)
-        if len(self._seen) > self._max:
-            self._seen.popitem(last=False)
+        with self._lock:
+            previous = self._seen.get(key)
+            self._seen[key] = digest
+            self._seen.move_to_end(key)
+            if len(self._seen) > self._max:
+                self._seen.popitem(last=False)
         if previous is not None and previous != digest:
             return previous
         return None

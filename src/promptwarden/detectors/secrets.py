@@ -56,7 +56,10 @@ SECRET_RULES: list[SecretRule] = [
     SecretRule(
         rule_id="PW-S004",
         pattern=re.compile(
-            r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b"
+            # The lookbehind pins the match to the start of a run: `-` is both
+            # a word boundary and part of the class, so `\b` alone lets a
+            # body of "eyJ-eyJ-..." rescan the rest of the text from every eyJ.
+            r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b"
         ),
         severity=7,
         description="JSON Web Token",

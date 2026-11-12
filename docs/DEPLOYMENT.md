@@ -129,9 +129,14 @@ Inspection is CPU-bound and runs on the request path.
 
 | Input | Cost |
 |-------|------|
-| Plain text, default policy | about 0.4 ms per 1,000 characters |
-| Adversarial text that triggers many rules | up to about 1.5 ms per 1,000 characters |
+| Plain text, default policy | about 0.3 ms per 1,000 characters |
+| Hostile text built to exercise the rules | up to about 1.6 ms per 1,000 characters (1.6 s for 1 MB) |
 | Window-mode stream | about 12 inspection passes over a 560-character window per 600 characters streamed |
+
+Hostile text built to exercise the rules costs more, and is bounded: every
+rule is linear, and bodies of 32 KB and above are inspected on a worker
+thread so the event loop keeps serving other connections. See the threat
+model (T4) for the measured worst case.
 
 One process handles inspection on one core. Start with `--workers` equal to
 the CPU request, or one worker per pod and more pods (simpler, and what the

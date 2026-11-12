@@ -32,6 +32,8 @@ _FUNCTIONAL: list[RuleInfo] = [
              "heuristics", 7, "LLM01", None, "AML.T0051"),
     RuleInfo("PW-H006", "Invisible Unicode characters (tag block / zero-width)",
              "heuristics", 9, "LLM01", None, "AML.T0051"),
+    RuleInfo("PW-H009", "Markdown image beacon with query parameters (data exfiltration "
+             "channel)", "heuristics", 8, "LLM05", None, "AML.T0057"),
     RuleInfo("PW-H010", "Base64 payload that decodes to an injection",
              "heuristics", 9, "LLM01", None, "AML.T0051"),
     RuleInfo("PW-H013", "Stacked policy-evasion language (persona jailbreak)",

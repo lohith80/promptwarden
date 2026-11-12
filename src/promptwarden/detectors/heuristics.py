@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 
 from ..normalize import count_invisible, normalize
+from . import markup
 from .base import INDIRECT_SOURCES, Detection, Direction
 
 
@@ -42,10 +43,6 @@ class PatternRule:
     # Skip a match that is directly negated ("do not reveal your system
     # prompt" is a defensive instruction, not a probe).
     negatable: bool = False
-    # Severity when the text is the caller's own turn. A user asking for an
-    # image beacon in their own chat only "exfiltrates" what they can already
-    # read; the same pattern in tool output or model output is the attack.
-    user_severity: int | None = None
     # Lowercase substrings, at least one of which must be present before the
     # regex is tried. A plain substring test is far cheaper than a large
     # alternation, and inspection time is on the request path.
@@ -117,15 +114,6 @@ PATTERN_RULES: list[PatternRule] = [
         description="Refusal-suppression instruction",
         owasp_llm="LLM01",
         atlas="AML.T0054",
-    ),
-    PatternRule(
-        rule_id="PW-H009",
-        pattern=re.compile(r"!\[[^\]]*\]\(https?://[^\s)]*[?&][^\s)]+\)"),
-        severity=8,
-        description="Markdown image beacon with query parameters (data exfiltration channel)",
-        owasp_llm="LLM05",
-        atlas="AML.T0057",
-        user_severity=5,
     ),
     PatternRule(
         rule_id="PW-H011",
@@ -257,12 +245,15 @@ _EVASION_SIGNALS: list[tuple[tuple[str, ...], re.Pattern]] = [
 ]
 EVASION_THRESHOLD = 3
 
-_BASE64_BLOB = re.compile(r"[A-Za-z0-9+/=]{80,}")
+# The lookbehind pins a match to the start of a run. Without it a failed
+# attempt is retried from every character of the run, which multiplies the
+# cost of scanning long encoded text by the length of the run.
+_BASE64_BLOB = re.compile(r"(?<![A-Za-z0-9+/=])[A-Za-z0-9+/=]{80,}")
 _DECODE_HINT = re.compile(r"(?i)\b(decode|base64|rot13|hex)\b")
 
 # Candidates for decode-and-rescan. Bounded so a hostile body cannot turn the
 # decoder into a CPU sink.
-_B64_CANDIDATE = re.compile(r"[A-Za-z0-9+/_-]{24,}={0,2}")
+_B64_CANDIDATE = re.compile(r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{24,}={0,2}")
 _MAX_B64_CANDIDATES = 8
 _MAX_B64_LEN = 8192
 
@@ -321,13 +312,10 @@ def _detection(rule: PatternRule, evidence: str, source: str | None = None, *,
     if obfuscated:
         description += " (revealed after de-obfuscation)"
         tags = ["obfuscated", "AML.T0068"]
-    severity = rule.severity
-    if rule.user_severity is not None and source == "user":
-        severity = rule.user_severity
     return Detection(
         detector="heuristics",
         rule_id=rule.rule_id,
-        severity=severity,
+        severity=rule.severity,
         confidence=0.8,
         description=description,
         evidence=evidence,
@@ -352,6 +340,29 @@ def scan(text: str, direction: Direction, source: str | None = None) -> list[Det
         for rule, match in _match_rules(variant, direction, source, fired):
             fired.add(rule.rule_id)
             detections.append(_detection(rule, match.group(0), source, obfuscated=True))
+
+    # Inline markdown image whose URL carries query parameters. In tool
+    # output, documents or model output this is the zero-click exfiltration
+    # channel. In the caller's own turn it only "exfiltrates" what the caller
+    # can already read, so it is reported at flag level there.
+    for start, end, url in markup.inline_images(text):
+        if markup.has_query(url):
+            detections.append(
+                Detection(
+                    detector="heuristics",
+                    rule_id="PW-H009",
+                    severity=5 if (direction == "inbound" and source == "user") else 8,
+                    confidence=0.8,
+                    description=(
+                        "Markdown image beacon with query parameters "
+                        "(data exfiltration channel)"
+                    ),
+                    evidence=text[start:end],
+                    owasp_llm="LLM05",
+                    atlas="AML.T0057",
+                )
+            )
+            break
 
     # A long blob next to a decode instruction, where the blob decodes to
     # readable text. Binary payloads (images, keys) pasted alongside the word

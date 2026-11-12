@@ -19,6 +19,7 @@ gateway:
   max_body_bytes: 1000000
   # If the inspection engine itself fails: fail_closed blocks, fail_open allows.
   on_error: fail_closed
+  # Read at startup; changing it needs a restart (other settings hot reload).
   upstream_timeout_seconds: 120
   # Return rule IDs in block responses. Set false if the gateway's response
   # can reach an untrusted end user: rule IDs help an attacker tune a bypass.

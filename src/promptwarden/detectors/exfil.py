@@ -14,15 +14,13 @@ import re
 from urllib.parse import urlsplit
 
 from ..config import ExfilConfig
+from . import markup
 from .base import Detection, Direction
 
-# ![alt][ref] ... [ref]: https://host/path?data
-_REF_IMAGE_USE = re.compile(r"!\[[^\]\n]*\]\s?\[[^\]\n]*\]")
-_REF_DEFINITION = re.compile(r"(?m)^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?(https?://[^\s>]+)")
-_HTML_IMAGE = re.compile(r"(?i)<img\b[^>]{0,200}?\bsrc\s*=\s*[\"']?(https?://[^\s\"'>]+)")
-_INLINE_IMAGE = re.compile(r"!\[[^\]\n]*\]\(\s*<?(https?://[^\s)>]+)")
-
-_HAS_QUERY = re.compile(r"[?&][^=\s]+=")
+# [ref]: https://host/path?data  (anchored to line starts, so linear)
+_REF_DEFINITION = re.compile(
+    r"(?m)^[ \t]{0,3}\[[^\]\n]{1,300}\]:[ \t]{0,8}<?(https?://[^\s>]{1,2048})"
+)
 
 
 def _host(url: str) -> str:
@@ -59,11 +57,11 @@ def scan(text: str, direction: Direction, config: ExfilConfig) -> list[Detection
     detections: list[Detection] = []
 
     ref_urls = [m.group(1) for m in _REF_DEFINITION.finditer(text)]
-    html_urls = [m.group(1) for m in _HTML_IMAGE.finditer(text)]
-    has_ref_image = bool(_REF_IMAGE_USE.search(text))
+    html_urls = list(markup.html_images(text))
+    has_ref_image = bool(ref_urls) and markup.has_reference_image(text)
 
     if has_ref_image:
-        beacon = next((url for url in ref_urls if _HAS_QUERY.search(url)), None)
+        beacon = next((url for url in ref_urls if markup.has_query(url)), None)
         if beacon:
             detections.append(
                 _detection(
@@ -74,7 +72,7 @@ def scan(text: str, direction: Direction, config: ExfilConfig) -> list[Detection
                 )
             )
 
-    beacon = next((url for url in html_urls if _HAS_QUERY.search(url)), None)
+    beacon = next((url for url in html_urls if markup.has_query(url)), None)
     if beacon:
         detections.append(
             _detection(
@@ -86,7 +84,7 @@ def scan(text: str, direction: Direction, config: ExfilConfig) -> list[Detection
         )
 
     if direction == "outbound" and config.allowed_image_domains:
-        image_urls = [m.group(1) for m in _INLINE_IMAGE.finditer(text)] + html_urls
+        image_urls = [url for _, _, url in markup.inline_images(text)] + html_urls
         if has_ref_image:
             image_urls += ref_urls
         for url in image_urls:

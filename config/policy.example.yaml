@@ -1,22 +1,62 @@
 # PromptWarden policy. Copy to config/policy.yaml and adjust.
-# Severity scale is 1-10; detections at or above block_at are blocked,
-# at or above flag_at are logged as flags but allowed through.
+#
+# The schema is strict: an unknown or misspelled key stops the gateway from
+# starting. Check a file before you deploy it:
+#
+#   promptwarden validate-policy config/policy.yaml
+#
+# Severity scale is 1-10. Detections at or above block_at are blocked, at or
+# above flag_at are logged as flags but allowed through.
+
+version: 1
 
 gateway:
+  # enforce: block at or above block_at.
+  # monitor: never block; record what would have been blocked. Start here.
+  mode: enforce
   block_at: 8
   flag_at: 5
   max_body_bytes: 1000000
+  # If the inspection engine itself fails: fail_closed blocks, fail_open allows.
+  on_error: fail_closed
+  # Read at startup; changing it needs a restart (other settings hot reload).
+  upstream_timeout_seconds: 120
+  # Return rule IDs in block responses. Set false if the gateway's response
+  # can reach an untrusted end user: rule IDs help an attacker tune a bypass.
+  expose_detections: true
+
+auth:
+  # true: every request needs a gateway key that maps to an app below.
+  required: false
+
+streaming:
+  # window: stream tokens through, holding back the last holdback_chars until
+  #         they are inspected. buffer: hold the whole response, then replay.
+  mode: window
+  holdback_chars: 256
+
+inspection:
+  # Roles written by your own developers. Still scanned for secrets, not for
+  # injection phrasing. Set to [] if gateway clients are themselves untrusted.
+  trusted_roles: [system, developer]
 
 detectors:
   heuristics:
     enabled: true
   secrets:
     enabled: true
+    # block: reject a prompt that contains a credential.
+    # redact: replace the credential with [REDACTED:<rule>] and continue.
+    inbound_action: block
   canary:
     enabled: true
-    # Generate with: python -c "from promptwarden.detectors.canary import generate_canary; print(generate_canary())"
-    # then embed the token in your app's system prompt and list it here.
+    # Generate with `promptwarden canary`, embed the token in your app's
+    # system prompt, and list it here.
     tokens: []
+  exfil:
+    enabled: true
+    # If set, images in model output may only load from these domains.
+    allowed_image_domains: []
   denylist:
     enabled: true
     patterns:
@@ -24,3 +64,50 @@ detectors:
         pattern: "(?i)internal use only"
         severity: 6
         description: "Internal classification marker in model traffic"
+        # directions: [outbound]   # default is both
+
+# Agent tool controls (defaults for every app).
+tools:
+  # Tool names the model may never call (glob patterns).
+  denied: []
+  # If non-empty, the only tool names the model may call.
+  allowed: []
+  # name -> sha256 of the approved definition. Generate with
+  # `promptwarden tool-hash tools.json`. A mismatch is a rug pull (PW-T003).
+  pinned: {}
+  # Reject any tool that is not pinned.
+  require_pinned: false
+  # Alert when a tool definition changes while the gateway is running.
+  drift_detection: true
+  # Scan tool descriptions and schemas for hidden instructions (PW-T002).
+  inspect_definitions: true
+
+# Consumption limits (defaults for every app). 0 means no limit.
+limits:
+  requests_per_minute: 0
+  burst: 0
+  # Upper bound on max_tokens / max_completion_tokens a client may request.
+  max_output_tokens: 0
+  # Glob patterns, for example ["gpt-4o*"]. Empty allows any model.
+  allowed_models: []
+
+audit:
+  # One metadata-only record per request: app, model, sizes, token usage,
+  # timings, rules fired. Never prompt or response content.
+  enabled: false
+
+# Applications. Each gets its own gateway key, and can override mode,
+# thresholds, limits and tool policy. Create a key with `promptwarden keygen`.
+apps: []
+# apps:
+#   - id: support-bot
+#     key_hashes: ["sha256:<64 hex chars from promptwarden keygen>"]
+#     # The provider key lives at the gateway, in this environment variable.
+#     # The app team only ever holds the gateway key.
+#     upstream_key_env: OPENAI_API_KEY_SUPPORT
+#     mode: monitor
+#     limits:
+#       requests_per_minute: 120
+#       allowed_models: ["gpt-4o-mini"]
+#     tools:
+#       denied: ["delete_*", "run_shell"]

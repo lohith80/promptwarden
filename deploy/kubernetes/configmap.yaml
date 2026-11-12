@@ -1,0 +1,30 @@
+# The policy is the security decision. Manage this ConfigMap through your
+# normal change control (GitOps, reviewed pull requests): editing it is
+# equivalent to editing a firewall rule set.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promptwarden-policy
+  namespace: promptwarden
+data:
+  policy.yaml: |
+    version: 1
+    gateway:
+      mode: monitor        # start in shadow mode; switch to enforce after review
+      block_at: 8
+      flag_at: 5
+      expose_detections: false
+    auth:
+      required: true
+    audit:
+      enabled: true
+    detectors:
+      secrets:
+        inbound_action: redact
+    limits:
+      requests_per_minute: 600
+    apps:
+      - id: example-app
+        # promptwarden keygen --app example-app
+        key_hashes: ["sha256:0000000000000000000000000000000000000000000000000000000000000000"]
+        upstream_key_env: UPSTREAM_KEY_EXAMPLE_APP
